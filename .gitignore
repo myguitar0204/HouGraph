@@ -1,0 +1,4 @@
+# 只留在本機，不公開：內部開發文件與實際清查單照片
+CLAUDE.md
+*.jpg
+.playwright-mcp/

@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>房屋平面圖繪圖工具</title>
+<style>
+:root{--navy:#1e3050;--line:#e3e6ea;--bg:#f6f7f9;--text:#1f2933;--muted:#6b7280;--sel:#2563eb}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:"Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif;color:var(--text);background:#fff}
+#app{display:flex;height:100vh;overflow:hidden}
+#side{flex:0 0 auto;width:380px;min-width:260px;overflow-y:auto;padding:20px 22px 40px;background:var(--bg)}
+#splitter{flex:0 0 8px;cursor:col-resize;background:var(--line);position:relative;touch-action:none}
+#splitter:hover,#splitter.active{background:#9fb3d1}
+#splitter::after{content:"⋮";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#555;font-size:16px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#toolbar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+#stage{flex:1;position:relative;overflow:hidden}
+#svg{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;user-select:none}
+#svg.panning{cursor:grabbing}
+#svg.drawing{cursor:crosshair}
+#drawHint{position:absolute;top:30px;left:34px;right:12px;background:var(--navy);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;pointer-events:none;z-index:1}
+#svg [data-sel],#svg [data-vertex],#svg [data-mid]{cursor:move}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 6px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+h2{font-size:15px;margin:20px 0 10px}
+.tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.tpl{font:inherit;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 4px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:14px;color:var(--text)}
+.tpl svg{width:36px;height:24px;fill:none;stroke:var(--navy);stroke-width:2}
+.tpl.on{border:2px solid var(--navy);background:#eef1f6}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:12px}
+.card h3{margin:0 0 10px;font-size:15px}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
+label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+label.full{grid-column:1/-1}
+input{font:inherit;font-size:15px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;width:100%;color:var(--text)}
+.btn{font:inherit;font-size:14px;padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--text)}
+.btn:hover{border-color:#9fb3d1}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);width:100%;margin-top:12px;padding:10px;font-size:16px}
+.btn.danger{color:#b42318}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+.err{font-size:13px;color:#b42318;margin:6px 0 0;min-height:1em}
+.tb{width:38px;height:38px;font-size:18px;padding:0}
+#zoomPct{min-width:60px;text-align:center}
+.area{width:100%;border-collapse:collapse;font-size:14px}
+.area td{padding:4px}
+.area .num{text-align:right;white-space:nowrap}
+.area .hd{color:var(--muted);font-size:13px}
+.area tr[data-id]{cursor:pointer}
+.area tr.on{background:#eef1f6}
+.area .subt{font-weight:bold;border-top:1px dashed #cbd5e1}
+.area .tot{font-weight:bold;border-top:2px solid var(--navy)}
+.cnt{color:var(--muted);font-size:12px}
+#print{display:none}
+@media print{
+  @page{size:A4 portrait;margin:12mm}
+  html,body{height:auto}
+  #app{display:none}
+  #print{display:block;color:#000}
+  #print h1{text-align:center;letter-spacing:.6em;font-size:22px;margin:0 0 3mm}
+  #print h3{margin:4mm 0 2mm;font-size:14px}
+  .meta{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:3mm}
+  .meta th,.meta td{border:1px solid #333;padding:3px 6px;text-align:left}
+  .meta th{background:#f1f5f9;width:14%;white-space:nowrap}
+  .pdraw{border:1px solid #333}
+  .pdraw svg{display:block;margin:0 auto}
+  #print .area{font-size:12px}
+  #print .hint{color:#333}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>房屋平面圖繪圖工具</h1>
+    <p class="sub">點選圖形範本 → 輸入長寬 → 拖曳排版</p>
+
+    <h2>圖形範本</h2>
+    <div class="tpls" id="tpls"></div>
+
+    <div class="card">
+      <h3 id="addTitle"></h3>
+      <div class="fields" id="addFields"></div>
+      <button class="btn primary" id="addBtn">加入畫布</button>
+      <p class="err" id="addErr"></p>
+    </div>
+
+    <h2>文字標註</h2>
+    <div class="card">
+      <div class="fields">
+        <label>文字（如 1F、H=3.2）<input id="txtVal" placeholder="1F"></label>
+        <label>字高 (m)<input id="txtSize" type="number" step="0.1" value="0.6"></label>
+      </div>
+      <button class="btn primary" id="txtBtn">加入文字</button>
+      <p class="err" id="txtErr"></p>
+    </div>
+
+    <h2>選取物件</h2>
+    <div class="card" id="props"></div>
+
+    <h2>面積計算</h2>
+    <div class="card" id="areas"></div>
+
+    <h2>圖說資料（列印表頭）</h2>
+    <div class="card"><div class="fields" id="metaFields"></div></div>
+
+    <h2>檔案</h2>
+    <div class="row">
+      <button class="btn" id="printBtn">列印 A4</button>
+      <button class="btn" id="saveBtn">儲存 JSON</button>
+      <button class="btn" id="openBtn">開啟 JSON</button>
+      <button class="btn" id="pngBtn">匯出 PNG</button>
+      <button class="btn danger" id="clearBtn">清空畫布</button>
+      <input type="file" id="fileIn" accept=".json,application/json" hidden>
+    </div>
+    <p class="hint">畫布內容會自動暫存在此瀏覽器。列印時縮放請選「100%／實際大小」，比例尺才準確。</p>
+    <datalist id="floorList"></datalist>
+  </aside>
+
+  <div id="splitter" title="拖曳調整左側寬度"></div>
+
+  <main id="main">
+    <div id="toolbar">
+      <button class="btn tb" id="zoomOut" title="縮小">−</button>
+      <span id="zoomPct">100%</span>
+      <button class="btn tb" id="zoomIn" title="放大">+</button>
+      <button class="btn tb" id="zoomReset" title="重設檢視">⟳</button>
+      <button class="btn" id="undoBtn" title="復原 (Ctrl+Z)">↶ 復原</button>
+      <span class="hint" style="margin:0 0 0 8px">滾輪縮放・拖曳空白處平移・Delete 刪除選取・方格 1 格 = 1 m</span>
+    </div>
+    <div id="stage"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg><div id="drawHint" hidden></div></div>
+  </main>
+</div>
+<div id="print"></div>
+
+<script>
+const BASE = 40;            // 100% 時每公尺的像素
+const RULER = 22;           // 刻度尺寬度 (px)
+const STORE = 'hougraph-v1';
+const $ = s => document.querySelector(s);
+const fmt = v => String(+(+v).toFixed(2));
+const snap = v => Math.round(v * 10) / 10;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// 各圖形：pts 為順時針頂點 (m)；dims 為 [起點, 終點, 數值]，尺寸線畫在行進方向的左手外側
+const edges = P => P.map((a, i) => { const b = P[(i + 1) % P.length]; return [a, b, Math.hypot(b[0]-a[0], b[1]-a[1])]; });
+const SHAPES = {
+  rect: { name:'矩形', icon:'<rect x="4" y="5" width="28" height="14"/>',
+    fields:[['w','寬度 W (m)',4],['h','高度 H (m)',6.5]],
+    pts:p=>[[0,0],[p.w,0],[p.w,p.h],[0,p.h]],
+    dims:p=>[[[p.w,p.h],[0,p.h],p.w],[[p.w,0],[p.w,p.h],p.h]] },
+  square: { name:'正方形', icon:'<rect x="9" y="3" width="18" height="18"/>',
+    fields:[['s','邊長 S (m)',4]],
+    pts:p=>[[0,0],[p.s,0],[p.s,p.s],[0,p.s]],
+    dims:p=>[[[p.s,p.s],[0,p.s],p.s],[[p.s,0],[p.s,p.s],p.s]] },
+  trap: { name:'梯形', icon:'<polygon points="12,4 24,4 31,20 5,20"/>',
+    fields:[['a','上底 A (m)',3],['b','下底 B (m)',5],['h','高 H (m)',4]],
+    pts:p=>{ const o=(p.b-p.a)/2; return [[o,0],[o+p.a,0],[p.b,p.h],[0,p.h]]; },
+    dims:p=>{ const o=(p.b-p.a)/2, r=Math.max(p.b,o+p.a); return [[[o,0],[o+p.a,0],p.a],[[p.b,p.h],[0,p.h],p.b],[[r,0],[r,p.h],p.h]]; } },
+  tri: { name:'三角形', icon:'<polygon points="6,4 30,20 6,20"/>',
+    fields:[['b','底 B (m)',4],['h','高 H (m)',3]],
+    pts:p=>[[0,0],[p.b,p.h],[0,p.h]],
+    dims:p=>[[[p.b,p.h],[0,p.h],p.b],[[0,p.h],[0,0],p.h]] },
+  para: { name:'平行四邊形', icon:'<polygon points="11,4 31,4 25,20 5,20"/>',
+    fields:[['b','底 B (m)',5],['h','高 H (m)',3],['o','偏移 O (m)',1]],
+    pts:p=>[[p.o,0],[p.o+p.b,0],[p.b,p.h],[0,p.h]],
+    dims:p=>{ const r=Math.max(p.b,p.o+p.b); return [[[p.b,p.h],[0,p.h],p.b],[[r,0],[r,p.h],p.h]]; } },
+  L: { name:'L 形', icon:'<polygon points="5,4 20,4 20,10 31,10 31,20 5,20"/>',
+    fields:[['W','總寬 W (m)',6],['H','總高 H (m)',6],['cw','缺角寬 (m)',2],['ch','缺角高 (m)',2]],
+    pts:p=>[[0,0],[p.W-p.cw,0],[p.W-p.cw,p.ch],[p.W,p.ch],[p.W,p.H],[0,p.H]],
+    dims:p=>edges(SHAPES.L.pts(p)) },
+  poly: { name:'不規則形', icon:'<polygon points="5,8 15,3 31,6 27,20 12,21 8,14"/>',
+    fields:[],
+    pts:p=>p.pts,
+    dims:p=>edges(p.pts) },
+};
+
+function validate(type, p) {
+  for (const [k, lab] of SHAPES[type].fields) {
+    if (!Number.isFinite(p[k])) return `請輸入${lab}`;
+    if (k !== 'o' && p[k] <= 0) return `${lab} 必須大於 0`;
+  }
+  if (type === 'L' && (p.cw >= p.W || p.ch >= p.H)) return '缺角寬/高必須小於總寬/總高';
+  if (type === 'poly' && !(p.pts && p.pts.length >= 3)) return '至少需要 3 個頂點';
+  return '';
+}
+
+// ---- 狀態 ----
+let doc = { shapes: [], texts: [], nextId: 1 };
+let view = { s: BASE, tx: RULER + 30, ty: RULER + 30 };
+let selected = null;        // {kind:'shape'|'text', id}
+let curType = 'rect';
+let lastFloor = '1F';
+let drag = null;
+let drawing = null;         // 不規則形繪製中：{pts, cur, label, floor}
+let editing = null;         // 頂點編輯中的圖形 id
+let activeV = null;         // 頂點編輯中被點選的頂點索引
+let lastTap = null;         // 自行判斷雙擊用（畫面重繪會讓瀏覽器的 dblclick 失效）
+let history = [];           // 文件快照（JSON 字串），最後一筆為目前狀態
+
+function save() {
+  const snap = JSON.stringify(doc);
+  if (history[history.length - 1] !== snap) { history.push(snap); if (history.length > 101) history.shift(); }
+  try { localStorage.setItem(STORE, snap); } catch (e) {}
+  $('#undoBtn').disabled = history.length < 2;
+}
+function undo() {
+  if (history.length < 2) return;
+  history.pop();
+  doc = JSON.parse(history[history.length - 1]);
+  try { localStorage.setItem(STORE, history[history.length - 1]); } catch (e) {}
+  $('#undoBtn').disabled = history.length < 2;
+  renderMeta(); select(selected);
+}
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && Array.isArray(d.shapes)) doc = d; } catch (e) {}
+}
+const findObj = sel => sel && (sel.kind === 'shape' ? doc.shapes : doc.texts).find(o => o.id === sel.id);
+
+// ---- 幾何 ----
+function geom(sh) {
+  const d = SHAPES[sh.type];
+  const rot = q => { let [x, y] = q; for (let i = 0; i < sh.rot; i++) [x, y] = [-y, x]; return [x, y]; };
+  const P = d.pts(sh.params).map(rot);
+  const mx = Math.min(...P.map(q => q[0])), my = Math.min(...P.map(q => q[1]));
+  const T = q => [q[0] - mx + sh.x, q[1] - my + sh.y];
+  return { pts: P.map(T), dims: d.dims(sh.params).map(([a, b, v]) => [T(rot(a)), T(rot(b)), v]) };
+}
+function centroid(P) {
+  let A = 0, cx = 0, cy = 0;
+  P.forEach(([x0, y0], i) => { const [x1, y1] = P[(i + 1) % P.length]; const c = x0 * y1 - x1 * y0; A += c; cx += (x0 + x1) * c; cy += (y0 + y1) * c; });
+  A /= 2;
+  return { x: cx / (6 * A), y: cy / (6 * A), area: Math.abs(A) };
+}
+
+// ---- 繪製（世界座標，單位 m）----
+const NS = 'vector-effect="non-scaling-stroke"';
+function dimSVG(a, b, v) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+  if (L < 1e-6) return '';
+  const ux = dx / L, uy = dy / L, nx = uy, ny = -ux, off = 0.35, tk = 0.1;
+  const p = (q, k) => `${q[0] + nx * k},${q[1] + ny * k}`;
+  const A = [a[0] + nx * off, a[1] + ny * off], B = [b[0] + nx * off, b[1] + ny * off];
+  const tick = q => `M${q[0] - (ux + nx) * tk},${q[1] - (uy + ny) * tk}L${q[0] + (ux + nx) * tk},${q[1] + (uy + ny) * tk}`;
+  const mx = (a[0] + b[0]) / 2 + nx * (off + 0.3), my = (a[1] + b[1]) / 2 + ny * (off + 0.3);
+  return `<path d="M${p(a, 0.08)}L${p(a, off + 0.12)}M${p(b, 0.08)}L${p(b, off + 0.12)}M${A}L${B}${tick(A)}${tick(B)}" stroke="#334155" fill="none" ${NS}/>`
+    + `<text x="${mx}" y="${my}" font-size="0.32" text-anchor="middle" dominant-baseline="central" fill="#1e293b">${fmt(v)}</text>`;
+}
+function contentSVG(showSel) {
+  let out = '';
+  for (const sh of doc.shapes) {
+    const g = geom(sh), c = centroid(g.pts);
+    const on = showSel && selected && selected.kind === 'shape' && selected.id === sh.id;
+    out += `<g data-sel="shape" data-id="${sh.id}">`
+      + `<polygon points="${g.pts.join(' ')}" fill="${on ? 'rgba(37,99,235,.08)' : 'rgba(255,255,255,.01)'}" stroke="${on ? '#2563eb' : '#1e3050'}" stroke-width="${on ? 3 : 2}" ${NS}/>`
+      + (sh.label ? `<text x="${c.x}" y="${c.y - 0.3}" font-size="0.5" text-anchor="middle" dominant-baseline="central" fill="#1e3050">${esc(sh.label)}</text>` : '')
+      + `<text x="${c.x}" y="${c.y + (sh.label ? 0.3 : 0)}" font-size="0.3" text-anchor="middle" dominant-baseline="central" fill="#64748b">${c.area.toFixed(2)} m²</text>`
+      + `</g><g pointer-events="none">${g.dims.map(d => dimSVG(...d)).join('')}</g>`;
+  }
+  for (const t of doc.texts) {
+    const on = showSel && selected && selected.kind === 'text' && selected.id === t.id;
+    out += `<text data-sel="text" data-id="${t.id}" x="${t.x}" y="${t.y}" font-size="${t.size}" text-anchor="middle" dominant-baseline="central" fill="${on ? '#2563eb' : '#1e3050'}">${esc(t.text)}</text>`;
+  }
+  return out;
+}
+function gridDefs(s, id) {
+  return `<pattern id="${id}" width="5" height="5" patternUnits="userSpaceOnUse">`
+    + `<path d="M1 0V5M2 0V5M3 0V5M4 0V5M0 1H5M0 2H5M0 3H5M0 4H5" stroke="#d3e6c3" stroke-width="${1 / s}" fill="none"/>`
+    + `<path d="M0 0V5M0 0H5" stroke="#a7c98a" stroke-width="${3 / s}" fill="none"/></pattern>`;
+}
+const NICE = [0.5, 1, 2, 5, 10, 20, 50, 100];
+function scaleBarSVG(x, y, s) {
+  const L = NICE.find(n => n * s >= 100) || 100, w = L * s, seg = w / 4;
+  let bars = '';
+  for (let i = 0; i < 4; i++) bars += `<rect x="${x + 10 + i * seg}" y="${y + 24}" width="${seg}" height="7" fill="${i % 2 ? '#fff' : '#1e3050'}" stroke="#1e3050"/>`;
+  const lab = (dx, t) => `<text x="${x + 10 + dx}" y="${y + 46}" font-size="11" text-anchor="middle" fill="#1e3050">${t}</text>`;
+  return `<g font-family="Microsoft JhengHei,Noto Sans TC,sans-serif"><rect x="${x}" y="${y}" width="${w + 34}" height="54" rx="6" fill="rgba(255,255,255,.92)" stroke="#cbd5e1"/>`
+    + `<text x="${x + 10}" y="${y + 16}" font-size="12" fill="#1e3050">比例尺</text>${bars}`
+    + lab(0, '0') + lab(w / 2, fmt(L / 2)) + lab(w, fmt(L) + ' m') + `</g>`;
+}
+function rulersSVG(W, H) {
+  const { s, tx, ty } = view;
+  const step = NICE.find(n => n * s >= 50) || 100, minor = step / 5;
+  let d = '', labels = '';
+  const ticks = (from, to, isX) => {
+    for (let v = Math.floor(from / minor) * minor; v <= to; v += minor) {
+      const major = Math.abs(v / step - Math.round(v / step)) < 1e-6;
+      const p = (isX ? tx : ty) + v * s;
+      if (p < RULER) continue;
+      const len = major ? 10 : 4;
+      d += isX ? `M${p} ${RULER}V${RULER - len}` : `M${RULER} ${p}H${RULER - len}`;
+      if (major) labels += isX
+        ? `<text x="${p + 3}" y="10" font-size="10">${fmt(v)}</text>`
+        : `<text x="10" y="${p - 3}" font-size="10" transform="rotate(-90 10 ${p - 3})">${fmt(v)}</text>`;
+    }
+  };
+  ticks(-tx / s, (W - tx) / s, true);
+  ticks(-ty / s, (H - ty) / s, false);
+  return `<g pointer-events="none" font-family="sans-serif" fill="#475569"><rect width="${W}" height="${RULER}" fill="#f1f5f9"/><rect width="${RULER}" height="${H}" fill="#f1f5f9"/>`
+    + `<path d="M0 ${RULER}H${W}M${RULER} 0V${H}" stroke="#94a3b8"/><path d="${d}" stroke="#64748b"/>${labels}`
+    + `<rect width="${RULER}" height="${RULER}" fill="#e2e8f0"/><text x="4" y="15" font-size="10">m</text></g>`;
+}
+
+const svg = $('#svg'), stage = $('#stage');
+function render() {
+  const W = stage.clientWidth, H = stage.clientHeight, { s, tx, ty } = view;
+  const x0 = -tx / s, y0 = -ty / s;
+  svg.innerHTML = `<defs>${gridDefs(s, 'g')}</defs>`
+    + `<g transform="translate(${tx},${ty}) scale(${s})" font-family="Microsoft JhengHei,Noto Sans TC,sans-serif">`
+    + `<rect x="${x0}" y="${y0}" width="${W / s}" height="${H / s}" fill="url(#g)"/>${contentSVG(true)}${editOverlaySVG()}${drawOverlaySVG()}</g>`
+    + rulersSVG(W, H) + scaleBarSVG(RULER + 12, H - 66, s);
+  $('#zoomPct').textContent = Math.round(s / BASE * 100) + '%';
+  renderAreas();
+}
+// 依樓層分組；同樓層內標籤相同者合併面積
+function areaGroups() {
+  const floors = new Map();
+  for (const sh of doc.shapes) {
+    const f = sh.floor || '未分層', a = centroid(geom(sh).pts).area;
+    if (!floors.has(f)) floors.set(f, new Map());
+    const m = floors.get(f), key = sh.label || '#' + sh.id;
+    const r = m.get(key) || { label: sh.label || '（未標籤）', area: 0, ids: [] };
+    r.area += a; r.ids.push(sh.id); m.set(key, r);
+  }
+  return [...floors].sort((a, b) => a[0].localeCompare(b[0], 'zh-Hant', { numeric: true }))
+    .map(([floor, m]) => { const rows = [...m.values()]; return { floor, rows, sub: rows.reduce((s, r) => s + r.area, 0) }; });
+}
+function areaTableHTML() {
+  const groups = areaGroups();
+  if (!groups.length) return '';
+  const total = groups.reduce((s, g) => s + g.sub, 0);
+  const selId = selected && selected.kind === 'shape' ? selected.id : null;
+  let h = `<table class="area"><tr class="hd"><td>樓層</td><td>標籤</td><td class="num">面積 (m²)</td></tr>`;
+  for (const g of groups) {
+    g.rows.forEach((r, i) => {
+      h += `<tr data-id="${r.ids[0]}"${r.ids.includes(selId) ? ' class="on"' : ''}><td>${i ? '' : esc(g.floor)}</td>`
+        + `<td>${esc(r.label)}${r.ids.length > 1 ? ` <span class="cnt">（${r.ids.length} 塊合併）</span>` : ''}</td><td class="num">${r.area.toFixed(2)}</td></tr>`;
+    });
+    h += `<tr class="subt"><td></td><td>${esc(g.floor)} 小計</td><td class="num">${g.sub.toFixed(2)}</td></tr>`;
+  }
+  return h + `<tr class="tot"><td colspan="2">合計</td><td class="num">${total.toFixed(2)}</td></tr></table>`
+    + `<p class="hint">約 ${(total * 0.3025).toFixed(2)} 坪（1 m² = 0.3025 坪）</p>`;
+}
+function renderAreas() {
+  $('#areas').innerHTML = areaTableHTML() || '<p class="hint" style="margin:0">尚無圖形。</p>';
+  const floors = new Set(['1F', '2F', '3F', '4F', '5F', ...doc.shapes.map(s => s.floor).filter(Boolean)]);
+  $('#floorList').innerHTML = [...floors].map(f => `<option value="${esc(f)}">`).join('');
+}
+$('#areas').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-id]'); if (tr) select({ kind: 'shape', id: +tr.dataset.id });
+});
+
+// ---- 左側：範本與新增 ----
+function renderTemplates() {
+  $('#tpls').innerHTML = Object.entries(SHAPES).map(([k, d]) =>
+    `<button class="tpl${k === curType ? ' on' : ''}" data-type="${k}"><svg viewBox="0 0 36 24">${d.icon}</svg>${d.name}</button>`).join('');
+  $('#addTitle').textContent = `加入「${SHAPES[curType].name}」`;
+  const isPoly = curType === 'poly';
+  $('#addFields').innerHTML = (isPoly
+    ? '<p class="hint" style="grid-column:1/-1;margin:0">按「開始繪製」後，在右側格線上逐點點擊頂點（每 0.1 m 吸附），點回起點、雙擊或按 Enter 完成。</p>'
+    : SHAPES[curType].fields.map(([k, lab, def]) =>
+      `<label>${lab}<input type="number" step="0.1" data-k="${k}" value="${def}"></label>`).join(''))
+    + `<label>樓層<input id="addFloor" list="floorList" value="${esc(lastFloor)}"></label>`
+    + `<label class="full">標籤文字（如 1A、[C]）<input id="addLabel"></label>`;
+  $('#addBtn').textContent = isPoly ? '開始繪製' : '加入畫布';
+  $('#addErr').textContent = '';
+}
+$('#tpls').addEventListener('click', e => {
+  const b = e.target.closest('[data-type]'); if (!b) return;
+  if (drawing) cancelDrawing();
+  curType = b.dataset.type; renderTemplates();
+});
+const readFields = box => Object.fromEntries([...box.querySelectorAll('[data-k]')].map(i => [i.dataset.k, parseFloat(i.value)]));
+function viewCenter() {
+  return { x: snap((stage.clientWidth / 2 - view.tx) / view.s), y: snap((stage.clientHeight / 2 - view.ty) / view.s) };
+}
+$('#addBtn').addEventListener('click', () => {
+  const floor = $('#addFloor').value.trim(), label = $('#addLabel').value.trim();
+  if (curType === 'poly') {
+    if (floor) lastFloor = floor;
+    drawing = { pts: [], cur: null, label, floor };
+    $('#addErr').textContent = ''; select(null); updateDrawHint();
+    return;
+  }
+  const params = readFields($('#addFields')), err = validate(curType, params);
+  $('#addErr').textContent = err; if (err) return;
+  const c = viewCenter();
+  if (floor) lastFloor = floor;
+  const sh = { id: doc.nextId++, type: curType, params, label, floor, x: c.x, y: c.y, rot: 0 };
+  doc.shapes.push(sh); select({ kind: 'shape', id: sh.id }); save();
+});
+$('#txtBtn').addEventListener('click', () => {
+  const text = $('#txtVal').value.trim(), size = parseFloat($('#txtSize').value);
+  $('#txtErr').textContent = !text ? '請輸入文字' : !(size > 0) ? '字高必須大於 0' : '';
+  if ($('#txtErr').textContent) return;
+  const c = viewCenter(), t = { id: doc.nextId++, text, size, x: c.x, y: c.y };
+  doc.texts.push(t); select({ kind: 'text', id: t.id }); save();
+});
+
+// ---- 左側：選取物件屬性 ----
+function select(sel) {
+  selected = sel;
+  if (!sel || sel.kind !== 'shape' || sel.id !== editing) { editing = null; activeV = null; }
+  updateDrawHint(); renderProps(); render();
+}
+function renderProps() {
+  const box = $('#props'), o = findObj(selected);
+  if (!o) { selected = null; box.innerHTML = '<p class="hint" style="margin:0">點選畫布上的圖形或文字即可編輯。</p>'; return; }
+  if (selected.kind === 'shape') {
+    const d = SHAPES[o.type];
+    box.innerHTML = `<h3>${d.name}</h3><div class="fields" id="propFields">`
+      + d.fields.map(([k, lab]) => `<label>${lab}<input type="number" step="0.1" data-k="${k}" value="${o.params[k]}"></label>`).join('')
+      + `<label>樓層<input id="propFloor" list="floorList" value="${esc(o.floor || '')}"></label>`
+      + `<label class="full">標籤文字<input id="propLabel" value="${esc(o.label)}"></label></div>`
+      + `<p class="hint" id="propArea"></p><p class="err" id="propErr"></p>`
+      + `<div class="row"><button class="btn" id="rotBtn">旋轉 90°</button><button class="btn" id="dupBtn">複製</button><button class="btn danger" id="delBtn">刪除</button></div>`;
+    const showArea = () => $('#propArea').textContent = `面積：${centroid(geom(o).pts).area.toFixed(2)} m²`;
+    showArea();
+    $('#propFields').addEventListener('input', e => {
+      if (e.target.id === 'propLabel') o.label = e.target.value.trim();
+      else if (e.target.id === 'propFloor') o.floor = e.target.value.trim();
+      else {
+        const p = readFields($('#propFields')), err = validate(o.type, p);
+        $('#propErr').textContent = err; if (err) return;
+        o.params = p; showArea();
+      }
+      render(); save();
+    });
+    $('#rotBtn').onclick = () => { o.rot = (o.rot + 1) % 4; render(); save(); };
+    $('#dupBtn').onclick = () => {
+      const c = { ...structuredClone(o), id: doc.nextId++, x: o.x + 1, y: o.y + 1 };
+      doc.shapes.push(c); select({ kind: 'shape', id: c.id }); save();
+    };
+  } else {
+    box.innerHTML = `<h3>文字標註</h3><div class="fields" id="propFields">`
+      + `<label>文字<input id="propText" value="${esc(o.text)}"></label>`
+      + `<label>字高 (m)<input id="propSize" type="number" step="0.1" value="${o.size}"></label></div>`
+      + `<div class="row"><button class="btn danger" id="delBtn">刪除</button></div>`;
+    $('#propFields').addEventListener('input', () => {
+      const text = $('#propText').value.trim(), size = parseFloat($('#propSize').value);
+      if (text) o.text = text;
+      if (size > 0) o.size = size;
+      render(); save();
+    });
+  }
+  $('#delBtn').onclick = deleteSelected;
+}
+function deleteSelected() {
+  if (!selected) return;
+  const key = selected.kind === 'shape' ? 'shapes' : 'texts';
+  doc[key] = doc[key].filter(o => o.id !== selected.id);
+  select(null); save();
+}
+
+// ---- 不規則形繪製 ----
+function drawOverlaySVG() {
+  if (!drawing) return '';
+  const s = view.s, P = drawing.cur ? [...drawing.pts, drawing.cur] : drawing.pts;
+  let out = `<polyline points="${P.join(' ')}" fill="rgba(37,99,235,.06)" stroke="#2563eb" stroke-width="2" stroke-dasharray="6 4" ${NS}/>`;
+  P.forEach((q, i) => {
+    if (!i) return;
+    const a = P[i - 1], L = Math.hypot(q[0] - a[0], q[1] - a[1]);
+    if (L > 0) out += `<text x="${(a[0] + q[0]) / 2}" y="${(a[1] + q[1]) / 2 - 6 / s}" font-size="${13 / s}" text-anchor="middle" fill="#2563eb" stroke="#fff" stroke-width="${3 / s}" paint-order="stroke">${fmt(L)}</text>`;
+  });
+  drawing.pts.forEach((q, i) => out += `<circle cx="${q[0]}" cy="${q[1]}" r="${(i ? 3.5 : 6) / s}" fill="${i ? '#2563eb' : '#fff'}" stroke="#2563eb" stroke-width="${2 / s}"/>`);
+  return `<g pointer-events="none">${out}</g>`;
+}
+function updateDrawHint() {
+  const h = $('#drawHint');
+  h.hidden = !drawing && editing === null; svg.classList.toggle('drawing', !!drawing);
+  if (drawing) h.textContent = `繪製不規則形：已 ${drawing.pts.length} 點｜點擊加入頂點・點回起點／雙擊／Enter 完成・Backspace 刪上一點・Esc 取消・按住 Shift 鎖定水平/垂直`;
+  else if (editing !== null) h.textContent = '頂點編輯：拖曳圓點改變形狀・拖曳邊中點的小方塊新增頂點・點選頂點後按 Delete 刪除・Esc／點空白處／再雙擊 結束';
+}
+function drawPoint(e) {
+  const w = toWorld(e), last = drawing.pts[drawing.pts.length - 1];
+  let x = snap(w.x), y = snap(w.y);
+  if (e.shiftKey && last) { if (Math.abs(x - last[0]) > Math.abs(y - last[1])) y = last[1]; else x = last[0]; }
+  return [x, y];
+}
+function cancelDrawing() { drawing = null; updateDrawHint(); render(); }
+function finishDrawing() {
+  const P = drawing.pts;
+  let A = 0;
+  P.forEach(([x0, y0], i) => { const [x1, y1] = P[(i + 1) % P.length]; A += x0 * y1 - x1 * y0; });
+  const err = P.length < 3 ? '至少需要 3 個頂點' : Math.abs(A) < 1e-6 ? '面積為 0，請重新點選頂點' : '';
+  $('#addErr').textContent = err; if (err) return;
+  const Q = A < 0 ? [...P].reverse() : P;   // 統一為畫面上的順時針，尺寸線才會標在外側
+  const mx = Math.min(...Q.map(q => q[0])), my = Math.min(...Q.map(q => q[1]));
+  const sh = { id: doc.nextId++, type: 'poly', params: { pts: Q.map(q => [+(q[0] - mx).toFixed(2), +(q[1] - my).toFixed(2)]) },
+    label: drawing.label, floor: drawing.floor, x: mx, y: my, rot: 0 };
+  drawing = null; updateDrawHint();
+  doc.shapes.push(sh); select({ kind: 'shape', id: sh.id }); save();
+}
+
+// ---- 頂點編輯（雙擊圖形進入）----
+const signedArea = P => P.reduce((A, [x0, y0], i) => { const [x1, y1] = P[(i + 1) % P.length]; return A + x0 * y1 - x1 * y0; }, 0) / 2;
+function setWorldPts(sh, W) {
+  const mx = Math.min(...W.map(q => q[0])), my = Math.min(...W.map(q => q[1]));
+  sh.params = { pts: W.map(q => [+(q[0] - mx).toFixed(2), +(q[1] - my).toFixed(2)]) }; sh.x = mx; sh.y = my;
+}
+// 範本圖形一旦改動頂點即轉為不規則形（頂點順序沿用 geom，索引不變）
+function toPoly(sh) { if (sh.type !== 'poly') { const W = geom(sh).pts; sh.type = 'poly'; sh.rot = 0; setWorldPts(sh, W); } }
+function editOverlaySVG() {
+  const sh = doc.shapes.find(o => o.id === editing);
+  if (!sh) return '';
+  const s = view.s, P = geom(sh).pts;
+  let out = '';
+  P.forEach((a, i) => {
+    const b = P[(i + 1) % P.length];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) * s > 30)
+      out += `<rect data-mid="${i}" x="${(a[0] + b[0]) / 2 - 4 / s}" y="${(a[1] + b[1]) / 2 - 4 / s}" width="${8 / s}" height="${8 / s}" fill="#fff" stroke="#2563eb" stroke-width="${1.5 / s}"/>`;
+  });
+  P.forEach((q, i) => out += `<circle data-vertex="${i}" cx="${q[0]}" cy="${q[1]}" r="${7 / s}" fill="${i === activeV ? '#f59e0b' : '#2563eb'}" stroke="#fff" stroke-width="${2 / s}"/>`);
+  return `<g>${out}</g>`;
+}
+
+// ---- 畫布互動 ----
+const toWorld = e => { const r = svg.getBoundingClientRect(); return { x: (e.clientX - r.left - view.tx) / view.s, y: (e.clientY - r.top - view.ty) / view.s }; };
+svg.addEventListener('pointerdown', e => {
+  if (drawing && e.button === 0) {
+    const p = drawPoint(e), P = drawing.pts, f = P[0], last = P[P.length - 1];
+    e.preventDefault();
+    const onLast = last && last[0] === p[0] && last[1] === p[1];   // 在最後一點再點一下＝雙擊
+    if (P.length >= 3 && (onLast || Math.hypot(f[0] - p[0], f[1] - p[1]) * view.s < 10)) { finishDrawing(); return; }
+    if (!onLast) P.push(p);
+    updateDrawHint(); render();
+    return;
+  }
+  const hv = e.target.closest('[data-vertex],[data-mid]');
+  if (hv && e.button === 0) {
+    const sh = doc.shapes.find(o => o.id === editing);
+    let i = +(hv.dataset.vertex ?? hv.dataset.mid);
+    if (hv.dataset.mid !== undefined) {         // 拖曳邊中點：在該邊插入新頂點
+      toPoly(sh);
+      const W = geom(sh).pts, a = W[i], b = W[(i + 1) % W.length];
+      W.splice(++i, 0, [snap((a[0] + b[0]) / 2), snap((a[1] + b[1]) / 2)]);
+      setWorldPts(sh, W);
+    }
+    activeV = i;
+    drag = { mode: 'vertex', sh, i, orig: JSON.stringify(sh), moved: hv.dataset.mid !== undefined };
+    render();
+    svg.setPointerCapture(e.pointerId); e.preventDefault();
+    return;
+  }
+  const el = e.target.closest('[data-sel]');
+  if (el && e.button === 0) {
+    const sel = { kind: el.dataset.sel, id: +el.dataset.id }, o = findObj(sel), w = toWorld(e);
+    const now = Date.now(), dbl = sel.kind === 'shape' && lastTap && lastTap.id === sel.id && now - lastTap.t < 400;
+    lastTap = { id: sel.id, t: now };
+    if (dbl) {                                    // 雙擊圖形：切換頂點編輯
+      lastTap = null; editing = editing === sel.id ? null : sel.id; activeV = null;
+      updateDrawHint(); render(); e.preventDefault();
+      return;
+    }
+    if (!selected || selected.kind !== sel.kind || selected.id !== sel.id) select(sel);
+    drag = { mode: 'move', o, sx: w.x, sy: w.y, ox: o.x, oy: o.y, moved: false };
+  } else if (e.button === 0 || e.button === 1) {
+    if (e.button === 0 && selected) select(null);
+    drag = { mode: 'pan', px: e.clientX, py: e.clientY, tx: view.tx, ty: view.ty };
+    svg.classList.add('panning');
+  } else return;
+  svg.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+svg.addEventListener('pointermove', e => {
+  if (drawing && !drag) { drawing.cur = drawPoint(e); render(); return; }
+  if (!drag) return;
+  if (drag.mode === 'move') {
+    const w = toWorld(e);
+    drag.o.x = snap(drag.ox + w.x - drag.sx); drag.o.y = snap(drag.oy + w.y - drag.sy); drag.moved = true;
+  } else if (drag.mode === 'vertex') {
+    const w = toWorld(e);
+    toPoly(drag.sh);
+    const W = geom(drag.sh).pts; W[drag.i] = [snap(w.x), snap(w.y)];
+    setWorldPts(drag.sh, W); drag.moved = true;
+  } else {
+    view.tx = drag.tx + e.clientX - drag.px; view.ty = drag.ty + e.clientY - drag.py;
+  }
+  render();
+});
+const endDrag = () => {
+  if (drag && drag.mode === 'move' && drag.moved) save();
+  if (drag && drag.mode === 'vertex' && drag.moved) {
+    const sh = drag.sh, A = signedArea(geom(sh).pts);
+    if (Math.abs(A) < 1e-6) Object.assign(sh, JSON.parse(drag.orig));   // 拉成面積 0 則還原
+    else if (A < 0) {                                                    // 維持順時針，尺寸線才在外側
+      const W = geom(sh).pts.reverse(); setWorldPts(sh, W); activeV = W.length - 1 - activeV;
+    }
+    save(); renderProps(); render();
+  }
+  drag = null; svg.classList.remove('panning');
+};
+svg.addEventListener('pointerup', endDrag);
+svg.addEventListener('pointercancel', endDrag);
+
+function zoomAt(f, cx, cy) {
+  const s = Math.min(BASE * 8, Math.max(BASE * 0.1, view.s * f));
+  view.tx = cx - (cx - view.tx) * s / view.s; view.ty = cy - (cy - view.ty) * s / view.s; view.s = s;
+  render();
+}
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+$('#zoomIn').onclick = () => zoomAt(1.2, stage.clientWidth / 2, stage.clientHeight / 2);
+$('#zoomOut').onclick = () => zoomAt(1 / 1.2, stage.clientWidth / 2, stage.clientHeight / 2);
+$('#zoomReset').onclick = () => { view = { s: BASE, tx: RULER + 30, ty: RULER + 30 }; render(); };
+
+document.addEventListener('keydown', e => {
+  if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (drawing) {
+    if (e.key === 'Escape') cancelDrawing();
+    else if (e.key === 'Enter') finishDrawing();
+    else if (e.key === 'Backspace' || e.key === 'Delete') { drawing.pts.pop(); updateDrawHint(); render(); }
+    else return;
+    e.preventDefault(); return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (editing !== null && e.key === 'Escape') { editing = null; activeV = null; updateDrawHint(); render(); return; }
+  if (editing !== null && activeV !== null && (e.key === 'Delete' || e.key === 'Backspace')) {
+    e.preventDefault();
+    const sh = doc.shapes.find(o => o.id === editing), W = geom(sh).pts;
+    if (W.length <= 3) return;                   // 至少保留 3 個頂點
+    toPoly(sh); W.splice(activeV, 1); setWorldPts(sh, W); activeV = null;
+    save(); renderProps(); render();
+    return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); }
+});
+
+// ---- 左側寬度拖曳 ----
+const side = $('#side'), splitter = $('#splitter');
+try { const w = +localStorage.getItem(STORE + '-side'); if (w) side.style.width = w + 'px'; } catch (e) {}
+splitter.addEventListener('pointerdown', e => { splitter.setPointerCapture(e.pointerId); splitter.classList.add('active'); });
+splitter.addEventListener('pointermove', e => {
+  if (!splitter.classList.contains('active')) return;
+  const w = Math.min(window.innerWidth * 0.7, Math.max(260, e.clientX - side.getBoundingClientRect().left));
+  side.style.width = w + 'px';
+});
+splitter.addEventListener('pointerup', () => {
+  splitter.classList.remove('active');
+  try { localStorage.setItem(STORE + '-side', parseInt(side.style.width) || 380); } catch (e) {}
+});
+new ResizeObserver(render).observe(stage);
+
+// ---- 檔案 ----
+function download(name, blob) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+$('#saveBtn').onclick = () => download(`平面圖_${stamp()}.json`, new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }));
+$('#openBtn').onclick = () => $('#fileIn').click();
+$('#fileIn').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.shapes) || !Array.isArray(d.texts)) throw new Error('格式不符');
+    doc = d; renderMeta(); select(null); save();
+  } catch (err) { alert('無法開啟檔案：' + err.message); }
+};
+$('#clearBtn').onclick = () => {
+  if (!confirm('確定要清空畫布上所有圖形與文字？')) return;
+  doc = { shapes: [], texts: [], nextId: 1 }; renderMeta(); select(null); save();
+};
+// 圖面範圍 (m)，空白畫布回傳 null
+function drawingBounds() {
+  const xs = [], ys = [];
+  for (const sh of doc.shapes) { const g = geom(sh); for (const q of g.pts) { xs.push(q[0]); ys.push(q[1]); } }
+  for (const t of doc.texts) { const hw = t.text.length * t.size * 0.6; xs.push(t.x - hw, t.x + hw); ys.push(t.y - t.size, t.y + t.size); }
+  if (!xs.length) return null;
+  const pad = 1.5;
+  return { minX: Math.floor(Math.min(...xs) - pad), minY: Math.floor(Math.min(...ys) - pad),
+           maxX: Math.ceil(Math.max(...xs) + pad), maxY: Math.ceil(Math.max(...ys) + pad) };
+}
+const BAR_H = 70;           // 圖面下方留給比例尺的高度 (px)
+function drawingSVG(b, s, gid) {
+  const W = (b.maxX - b.minX) * s, H = (b.maxY - b.minY) * s + BAR_H;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${gridDefs(s, gid)}</defs><rect width="${W}" height="${H}" fill="#fff"/>`
+    + `<g transform="translate(${-b.minX * s},${-b.minY * s}) scale(${s})" font-family="Microsoft JhengHei,Noto Sans TC,sans-serif">`
+    + `<rect x="${b.minX}" y="${b.minY}" width="${W / s}" height="${H / s}" fill="url(#${gid})"/>${contentSVG(false)}</g>`
+    + scaleBarSVG(12, H - 66, s) + `</svg>`;
+}
+$('#pngBtn').onclick = () => {
+  const b = drawingBounds();
+  if (!b) { alert('畫布是空的'); return; }
+  const s = 60, W = (b.maxX - b.minX) * s, H = (b.maxY - b.minY) * s + BAR_H, str = drawingSVG(b, s, 'gx');
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    c.getContext('2d').drawImage(img, 0, 0);
+    c.toBlob(b => download(`平面圖_${stamp()}.png`, b));
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
+};
+
+// ---- 圖說資料與 A4 列印 ----
+const META = [['taxNo', '稅籍編號'], ['addr', '房屋坐落'], ['drawer', '繪製人員'], ['date', '繪製日期']];
+function renderMeta() {
+  const m = doc.meta || {};
+  $('#metaFields').innerHTML = META.map(([k, lab]) =>
+    `<label${k === 'addr' ? ' class="full"' : ''}>${lab}<input data-meta="${k}" value="${esc(m[k] || '')}"></label>`).join('');
+}
+$('#metaFields').addEventListener('input', e => {
+  doc.meta = { ...doc.meta, [e.target.dataset.meta]: e.target.value }; save();
+});
+const PRINT_W = 186, PRINT_H = 175;   // A4 扣邊界後圖面可用範圍 (mm)
+const SCALES = [50, 100, 150, 200, 250, 300, 400, 500, 600, 1000, 1500, 2000];
+const MM_PER_PX = 25.4 / 96;
+function buildPrint() {
+  const b = drawingBounds();
+  if (!b) return false;
+  const N = SCALES.find(n => (b.maxX - b.minX) * 1000 / n <= PRINT_W
+    && (b.maxY - b.minY) * 1000 / n + BAR_H * MM_PER_PX <= PRINT_H) || SCALES[SCALES.length - 1];
+  const s = 1000 / N / MM_PER_PX;     // 每公尺的 CSS px，使列印尺寸符合 1:N
+  const m = doc.meta || {}, v = k => esc(m[k] || '');
+  const total = areaGroups().reduce((t, g) => t + g.sub, 0);
+  $('#print').innerHTML = `<h1>房屋平面圖</h1><table class="meta">`
+    + `<tr><th>稅籍編號</th><td>${v('taxNo')}</td><th>繪製日期</th><td>${v('date')}</td></tr>`
+    + `<tr><th>房屋坐落</th><td colspan="3">${v('addr')}</td></tr>`
+    + `<tr><th>繪製人員</th><td>${v('drawer')}</td><th>比例尺</th><td>1 : ${N}　（總面積 ${total.toFixed(2)} m²）</td></tr></table>`
+    + `<div class="pdraw">${drawingSVG(b, s, 'gp')}</div><h3>面積計算</h3>${areaTableHTML()}`;
+  return true;
+}
+$('#printBtn').onclick = () => {
+  if (!buildPrint()) { alert('畫布是空的'); return; }
+  window.print();
+};
+
+load();
+history = [JSON.stringify(doc)];
+$('#undoBtn').disabled = true;
+renderMeta();
+renderTemplates();
+renderProps();
+render();
+</script>
+</body>
+</html>
