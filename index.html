@@ -197,7 +197,8 @@ let drag = null;
 let drawing = null;         // 不規則形繪製中：{pts, cur, label, floor}
 let editing = null;         // 頂點編輯中的圖形 id
 let activeV = null;         // 頂點編輯中被點選的頂點索引
-let lastTap = null;         // 自行判斷雙擊用（畫面重繪會讓瀏覽器的 dblclick 失效）
+let clip = null;            // Ctrl+C 複製的物件：{kind, json, n}（n 為已貼上次數，決定錯開距離）
+let lastTap = null;        // 自行判斷雙擊用（畫面重繪會讓瀏覽器的 dblclick 失效）
 let history = [];           // 文件快照（JSON 字串），最後一筆為目前狀態
 
 function save() {
@@ -244,9 +245,11 @@ function dimSVG(a, b, v) {
   const p = (q, k) => `${q[0] + nx * k},${q[1] + ny * k}`;
   const A = [a[0] + nx * off, a[1] + ny * off], B = [b[0] + nx * off, b[1] + ny * off];
   const tick = q => `M${q[0] - (ux + nx) * tk},${q[1] - (uy + ny) * tk}L${q[0] + (ux + nx) * tk},${q[1] + (uy + ny) * tk}`;
-  const mx = (a[0] + b[0]) / 2 + nx * (off + 0.3), my = (a[1] + b[1]) / 2 + ny * (off + 0.3);
+  // 文字中心外推距離：依文字半寬／半高與法線方向計算，避免壓到尺寸線
+  const fs = 0.96, t = fmt(v), k = off + 0.1 + Math.abs(nx) * t.length * fs * 0.3 + Math.abs(ny) * fs * 0.5;
+  const mx = (a[0] + b[0]) / 2 + nx * k, my = (a[1] + b[1]) / 2 + ny * k;
   return `<path d="M${p(a, 0.08)}L${p(a, off + 0.12)}M${p(b, 0.08)}L${p(b, off + 0.12)}M${A}L${B}${tick(A)}${tick(B)}" stroke="#334155" fill="none" ${NS}/>`
-    + `<text x="${mx}" y="${my}" font-size="0.32" text-anchor="middle" dominant-baseline="central" fill="#1e293b">${fmt(v)}</text>`;
+    + `<text x="${mx}" y="${my}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#1e293b">${t}</text>`;
 }
 function contentSVG(showSel) {
   let out = '';
@@ -255,8 +258,8 @@ function contentSVG(showSel) {
     const on = showSel && selected && selected.kind === 'shape' && selected.id === sh.id;
     out += `<g data-sel="shape" data-id="${sh.id}">`
       + `<polygon points="${g.pts.join(' ')}" fill="${on ? 'rgba(37,99,235,.08)' : 'rgba(255,255,255,.01)'}" stroke="${on ? '#2563eb' : '#1e3050'}" stroke-width="${on ? 3 : 2}" ${NS}/>`
-      + (sh.label ? `<text x="${c.x}" y="${c.y - 0.3}" font-size="0.5" text-anchor="middle" dominant-baseline="central" fill="#1e3050">${esc(sh.label)}</text>` : '')
-      + `<text x="${c.x}" y="${c.y + (sh.label ? 0.3 : 0)}" font-size="0.3" text-anchor="middle" dominant-baseline="central" fill="#64748b">${c.area.toFixed(2)} m²</text>`
+      + (sh.label ? `<text x="${c.x}" y="${c.y - 0.5}" font-size="0.9" text-anchor="middle" dominant-baseline="central" fill="#1e3050">${esc(sh.label)}</text>` : '')
+      + `<text x="${c.x}" y="${c.y + (sh.label ? 0.5 : 0)}" font-size="0.9" text-anchor="middle" dominant-baseline="central" fill="#64748b">${c.area.toFixed(2)} m²</text>`
       + `</g><g pointer-events="none">${g.dims.map(d => dimSVG(...d)).join('')}</g>`;
   }
   for (const t of doc.texts) {
@@ -271,8 +274,9 @@ function gridDefs(s, id) {
     + `<path d="M0 0V5M0 0H5" stroke="#a7c98a" stroke-width="${3 / s}" fill="none"/></pattern>`;
 }
 const NICE = [0.5, 1, 2, 5, 10, 20, 50, 100];
-function scaleBarSVG(x, y, s) {
+function scaleBarSVG(x, y, s, alignRight) {   // alignRight：x 為右緣
   const L = NICE.find(n => n * s >= 100) || 100, w = L * s, seg = w / 4;
+  if (alignRight) x -= w + 34;
   let bars = '';
   for (let i = 0; i < 4; i++) bars += `<rect x="${x + 10 + i * seg}" y="${y + 24}" width="${seg}" height="7" fill="${i % 2 ? '#fff' : '#1e3050'}" stroke="#1e3050"/>`;
   const lab = (dx, t) => `<text x="${x + 10 + dx}" y="${y + 46}" font-size="11" text-anchor="middle" fill="#1e3050">${t}</text>`;
@@ -310,7 +314,7 @@ function render() {
   svg.innerHTML = `<defs>${gridDefs(s, 'g')}</defs>`
     + `<g transform="translate(${tx},${ty}) scale(${s})" font-family="Microsoft JhengHei,Noto Sans TC,sans-serif">`
     + `<rect x="${x0}" y="${y0}" width="${W / s}" height="${H / s}" fill="url(#g)"/>${contentSVG(true)}${editOverlaySVG()}${drawOverlaySVG()}</g>`
-    + rulersSVG(W, H) + scaleBarSVG(RULER + 12, H - 66, s);
+    + rulersSVG(W, H) + scaleBarSVG(W - 12, RULER + 12, s, true);
   $('#zoomPct').textContent = Math.round(s / BASE * 100) + '%';
   renderAreas();
 }
@@ -471,7 +475,7 @@ function updateDrawHint() {
   const h = $('#drawHint');
   h.hidden = !drawing && editing === null; svg.classList.toggle('drawing', !!drawing);
   if (drawing) h.textContent = `繪製不規則形：已 ${drawing.pts.length} 點｜點擊加入頂點・點回起點／雙擊／Enter 完成・Backspace 刪上一點・Esc 取消・按住 Shift 鎖定水平/垂直`;
-  else if (editing !== null) h.textContent = '頂點編輯：拖曳圓點改變形狀・拖曳邊中點的小方塊新增頂點・點選頂點後按 Delete 刪除・Esc／點空白處／再雙擊 結束';
+  else if (editing !== null) h.textContent = '頂點編輯：拖曳圓點改變形狀（範本圖形為等比例縮放）・拖曳邊中點的小方塊新增頂點・點選頂點後按 Delete 刪除・Esc／點空白處／再雙擊 結束';
 }
 function drawPoint(e) {
   const w = toWorld(e), last = drawing.pts[drawing.pts.length - 1];
@@ -538,8 +542,14 @@ svg.addEventListener('pointerdown', e => {
       W.splice(++i, 0, [snap((a[0] + b[0]) / 2), snap((a[1] + b[1]) / 2)]);
       setWorldPts(sh, W);
     }
+    let sc = null;
+    if (sh.type !== 'poly') {                   // 範本圖形：以離拖曳點最遠的頂點為錨點，等比例縮放
+      const P = geom(sh).pts, v = P[i], d = q => Math.hypot(q[0] - v[0], q[1] - v[1]);
+      let ia = 0; P.forEach((q, j) => { if (d(q) > d(P[ia])) ia = j; });
+      sc = { params: { ...sh.params }, ia, a: P[ia], v };
+    }
     activeV = i;
-    drag = { mode: 'vertex', sh, i, orig: JSON.stringify(sh), moved: hv.dataset.mid !== undefined };
+    drag = { mode: 'vertex', sh, i, sc, orig: JSON.stringify(sh), moved: hv.dataset.mid !== undefined };
     render();
     svg.setPointerCapture(e.pointerId); e.preventDefault();
     return;
@@ -570,6 +580,14 @@ svg.addEventListener('pointermove', e => {
   if (drag.mode === 'move') {
     const w = toWorld(e);
     drag.o.x = snap(drag.ox + w.x - drag.sx); drag.o.y = snap(drag.oy + w.y - drag.sy); drag.moved = true;
+  } else if (drag.mode === 'vertex' && drag.sc) {
+    // 縮放倍率 = 滑鼠在「錨點→原頂點」方向上的投影比例
+    const w = toWorld(e), sh = drag.sh, { params, ia, a, v } = drag.sc, dx = v[0] - a[0], dy = v[1] - a[1];
+    const k = Math.max(0.05, ((w.x - a[0]) * dx + (w.y - a[1]) * dy) / (dx * dx + dy * dy));
+    for (const key in params) sh.params[key] = +(params[key] * k).toFixed(2);
+    sh.x = 0; sh.y = 0;
+    const q = geom(sh).pts[ia]; sh.x = +(a[0] - q[0]).toFixed(2); sh.y = +(a[1] - q[1]).toFixed(2);
+    drag.moved = true;
   } else if (drag.mode === 'vertex') {
     const w = toWorld(e);
     toPoly(drag.sh);
@@ -619,6 +637,17 @@ document.addEventListener('keydown', e => {
     e.preventDefault(); return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && findObj(selected)) {
+    e.preventDefault(); clip = { kind: selected.kind, json: JSON.stringify(findObj(selected)), n: 0 }; return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clip) {   // 每次貼上往右下錯開 1 m
+    e.preventDefault();
+    const o = JSON.parse(clip.json); clip.n++;
+    o.id = doc.nextId++; o.x = +(o.x + clip.n).toFixed(2); o.y = +(o.y + clip.n).toFixed(2);
+    (clip.kind === 'shape' ? doc.shapes : doc.texts).push(o);
+    select({ kind: clip.kind, id: o.id }); save();
+    return;
+  }
   if (editing !== null && e.key === 'Escape') { editing = null; activeV = null; updateDrawHint(); render(); return; }
   if (editing !== null && activeV !== null && (e.key === 'Delete' || e.key === 'Backspace')) {
     e.preventDefault();
@@ -672,7 +701,7 @@ function drawingBounds() {
   for (const sh of doc.shapes) { const g = geom(sh); for (const q of g.pts) { xs.push(q[0]); ys.push(q[1]); } }
   for (const t of doc.texts) { const hw = t.text.length * t.size * 0.6; xs.push(t.x - hw, t.x + hw); ys.push(t.y - t.size, t.y + t.size); }
   if (!xs.length) return null;
-  const pad = 1.5;
+  const pad = 3;
   return { minX: Math.floor(Math.min(...xs) - pad), minY: Math.floor(Math.min(...ys) - pad),
            maxX: Math.ceil(Math.max(...xs) + pad), maxY: Math.ceil(Math.max(...ys) + pad) };
 }
