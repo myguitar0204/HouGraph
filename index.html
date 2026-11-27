@@ -21,6 +21,15 @@ html,body{margin:0;height:100%;font-family:"Microsoft JhengHei","Noto Sans TC",s
 #svg.drawing{cursor:crosshair}
 #drawHint{position:absolute;top:30px;left:34px;right:12px;background:var(--navy);color:#fff;padding:8px 12px;border-radius:6px;font-size:13px;pointer-events:none;z-index:1}
 #svg [data-sel],#svg [data-vertex],#svg [data-mid]{cursor:move}
+.arrows{display:flex;flex-wrap:wrap;gap:4px}
+.arrows .btn{padding:2px 8px;font-size:16px}
+.adj{border-collapse:collapse;font-size:14px;width:100%}
+.adj td,.adj th{border:1px solid var(--line);padding:3px;text-align:center;font-weight:normal}
+.adj td:first-child{text-align:left}
+.adj th input{width:48px;padding:3px 4px;font-size:14px}
+.adj th .btn{padding:0 5px;margin-left:2px;font-size:12px}
+.adj input[type=checkbox]{width:auto}
+#popup{position:absolute;z-index:2;width:300px;margin:0;max-height:calc(100% - 40px);overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,.18)}
 h1{font-size:22px;margin:0 0 4px}
 .sub{color:var(--muted);font-size:14px;margin:0 0 6px;padding-bottom:14px;border-bottom:1px solid var(--line)}
 h2{font-size:15px;margin:20px 0 10px}
@@ -32,8 +41,8 @@ h2{font-size:15px;margin:20px 0 10px}
 .card h3{margin:0 0 10px;font-size:15px}
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px}
 label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
-label.full{grid-column:1/-1}
-input{font:inherit;font-size:15px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;width:100%;color:var(--text)}
+.full{grid-column:1/-1}
+input,select{font:inherit;font-size:15px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;width:100%;color:var(--text)}
 .btn{font:inherit;font-size:14px;padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--text)}
 .btn:hover{border-color:#9fb3d1}
 .btn:disabled{opacity:.4;cursor:default}
@@ -47,27 +56,31 @@ input{font:inherit;font-size:15px;padding:7px 9px;border:1px solid var(--line);b
 .area{width:100%;border-collapse:collapse;font-size:14px}
 .area td{padding:4px}
 .area .num{text-align:right;white-space:nowrap}
-.area .hd{color:var(--muted);font-size:13px}
+.area .hd{color:var(--muted)}
 .area tr[data-id]{cursor:pointer}
 .area tr.on{background:#eef1f6}
-.area .subt{font-weight:bold;border-top:1px dashed #cbd5e1}
 .area .tot{font-weight:bold;border-top:2px solid var(--navy)}
-.cnt{color:var(--muted);font-size:12px}
 #print{display:none}
 @media print{
-  @page{size:A4 portrait;margin:12mm}
-  html,body{height:auto}
+  /* 版面依「平面圖範例.pdf」轉正：左欄計算式＋加減項目，右欄標題＋圖面 */
+  @page{size:A4 landscape;margin:8mm}
+  html,body{height:auto;background:#fff}
   #app{display:none}
   #print{display:block;color:#000}
-  #print h1{text-align:center;letter-spacing:.6em;font-size:22px;margin:0 0 3mm}
-  #print h3{margin:4mm 0 2mm;font-size:14px}
-  .meta{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:3mm}
-  .meta th,.meta td{border:1px solid #333;padding:3px 6px;text-align:left}
-  .meta th{background:#f1f5f9;width:14%;white-space:nowrap}
-  .pdraw{border:1px solid #333}
-  .pdraw svg{display:block;margin:0 auto}
-  #print .area{font-size:12px}
-  #print .hint{color:#333}
+  .sheet{width:280mm;height:192mm;box-sizing:border-box;display:grid;grid-template-columns:78mm 1fr;grid-template-rows:12mm 1fr;border:1.5px solid #7aa33a;font-size:11px}
+  .sheet>div{border:1px solid #7aa33a;overflow:hidden;box-sizing:border-box}
+  .sh{display:flex;align-items:center;justify-content:center;letter-spacing:.4em;color:#4d7a1f;font-size:14px}
+  .st{position:relative;font-size:22px;letter-spacing:.8em}
+  .ptax{letter-spacing:0;color:#000;font-size:13px}
+  .sl{display:flex;flex-direction:column;padding:2mm}
+  .calc{flex:1;overflow:hidden;line-height:1.6}
+  .calc .pt{font-weight:bold;border-top:1px solid #7aa33a;margin-top:1mm;padding-top:1mm}
+  .padj-t{color:#4d7a1f;margin:2mm 0 1mm}
+  .padj{border-collapse:collapse;width:100%;font-size:10px}
+  .padj td,.padj th{border:1px solid #7aa33a;padding:1px 2px;text-align:center;font-weight:normal}
+  .padj td:first-child{text-align:left}
+  .sd{display:flex;align-items:center;justify-content:center}
+  .sd svg{display:block}
 }
 </style>
 </head>
@@ -92,6 +105,7 @@ input{font:inherit;font-size:15px;padding:7px 9px;border:1px solid var(--line);b
       <div class="fields">
         <label>文字（如 1F、H=3.2）<input id="txtVal" placeholder="1F"></label>
         <label>字高 (m)<input id="txtSize" type="number" step="0.1" value="0.6"></label>
+        <div class="full arrows" id="txtArrows"></div>
       </div>
       <button class="btn primary" id="txtBtn">加入文字</button>
       <p class="err" id="txtErr"></p>
@@ -130,7 +144,7 @@ input{font:inherit;font-size:15px;padding:7px 9px;border:1px solid var(--line);b
       <button class="btn" id="undoBtn" title="復原 (Ctrl+Z)">↶ 復原</button>
       <span class="hint" style="margin:0 0 0 8px">滾輪縮放・拖曳空白處平移・Delete 刪除選取・方格 1 格 = 1 m</span>
     </div>
-    <div id="stage"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg><div id="drawHint" hidden></div></div>
+    <div id="stage"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg><div id="drawHint" hidden></div><div id="popup" class="card" hidden></div></div>
   </main>
 </div>
 <div id="print"></div>
@@ -148,7 +162,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const edges = P => P.map((a, i) => { const b = P[(i + 1) % P.length]; return [a, b, Math.hypot(b[0]-a[0], b[1]-a[1])]; });
 const SHAPES = {
   rect: { name:'矩形', icon:'<rect x="4" y="5" width="28" height="14"/>',
-    fields:[['w','寬度 W (m)',4],['h','高度 H (m)',6.5]],
+    fields:[['w','寬度 W (m)',4],['h','長 L (m)',6.5]],
     pts:p=>[[0,0],[p.w,0],[p.w,p.h],[0,p.h]],
     dims:p=>[[[p.w,p.h],[0,p.h],p.w],[[p.w,0],[p.w,p.h],p.h]] },
   square: { name:'正方形', icon:'<rect x="9" y="3" width="18" height="18"/>',
@@ -177,6 +191,13 @@ const SHAPES = {
     dims:p=>edges(p.pts) },
 };
 
+// 房屋構造別代號（附表二：屏東縣房屋構造別代號暨折舊率對照表，114.7.1 起實施）
+const STRUCTS = [['P','鋼骨造'],['A','鋼骨混凝土造'],['S','鋼骨鋼筋混凝土造'],['B','鋼筋混凝土造'],['T','預鑄混凝土造'],
+  ['C','加強磚造'],['U','鋼鐵(架)造'],['J','鋼鐵(架)造'],['G','咾咕石造'],['H','卵石混凝土造'],['D','雜木以外'],['E','雜木'],
+  ['F','磚石造'],['L','竹造'],['K','土磚混合造'],['R','純土造'],['O','特殊構造物'],['M','中央系統型冷氣機'],['N','電梯']];
+const structOpts = v => '<option value="">（未選）</option>'
+  + STRUCTS.map(([k, n]) => `<option value="${k}"${k === v ? ' selected' : ''}>${k} ${n}</option>`).join('');
+
 function validate(type, p) {
   for (const [k, lab] of SHAPES[type].fields) {
     if (!Number.isFinite(p[k])) return `請輸入${lab}`;
@@ -189,15 +210,17 @@ function validate(type, p) {
 
 // ---- 狀態 ----
 let doc = { shapes: [], texts: [], nextId: 1 };
-let view = { s: BASE, tx: RULER + 30, ty: RULER + 30 };
+const DEFAULT_S = BASE * 0.4;   // 開啟與重設時的縮放（40%）
+let view = { s: DEFAULT_S, tx: RULER + 30, ty: RULER + 30 };
 let selected = null;        // {kind:'shape'|'text', id}
 let curType = 'rect';
-let lastFloor = '1F';
+let lastFloor = '';
 let drag = null;
 let drawing = null;         // 不規則形繪製中：{pts, cur, label, floor}
 let editing = null;         // 頂點編輯中的圖形 id
 let activeV = null;         // 頂點編輯中被點選的頂點索引
-let clip = null;            // Ctrl+C 複製的物件：{kind, json, n}（n 為已貼上次數，決定錯開距離）
+let popup = null;           // 雙擊開啟參數窗的圖形 id
+let clip = null;           // Ctrl+C 複製的物件：{kind, json, n}（n 為已貼上次數，決定錯開距離）
 let lastTap = null;        // 自行判斷雙擊用（畫面重繪會讓瀏覽器的 dblclick 失效）
 let history = [];           // 文件快照（JSON 字串），最後一筆為目前狀態
 
@@ -241,15 +264,21 @@ const NS = 'vector-effect="non-scaling-stroke"';
 function dimSVG(a, b, v) {
   const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
   if (L < 1e-6) return '';
-  const ux = dx / L, uy = dy / L, nx = uy, ny = -ux, off = 0.35, tk = 0.1;
-  const p = (q, k) => `${q[0] + nx * k},${q[1] + ny * k}`;
-  const A = [a[0] + nx * off, a[1] + ny * off], B = [b[0] + nx * off, b[1] + ny * off];
-  const tick = q => `M${q[0] - (ux + nx) * tk},${q[1] - (uy + ny) * tk}L${q[0] + (ux + nx) * tk},${q[1] + (uy + ny) * tk}`;
-  // 文字中心外推距離：依文字半寬／半高與法線方向計算，避免壓到尺寸線
-  const fs = 0.96, t = fmt(v), k = off + 0.1 + Math.abs(nx) * t.length * fs * 0.3 + Math.abs(ny) * fs * 0.5;
+  const nx = dy / L, ny = -dx / L;
+  // 只標數字（不畫尺寸線）；文字中心外推距離依文字半寬／半高與法線方向計算，避免壓到圖形邊
+  const fs = 0.96, t = fmt(v), k = 0.15 + Math.abs(nx) * t.length * fs * 0.3 + Math.abs(ny) * fs * 0.5;
   const mx = (a[0] + b[0]) / 2 + nx * k, my = (a[1] + b[1]) / 2 + ny * k;
-  return `<path d="M${p(a, 0.08)}L${p(a, off + 0.12)}M${p(b, 0.08)}L${p(b, off + 0.12)}M${A}L${B}${tick(A)}${tick(B)}" stroke="#334155" fill="none" ${NS}/>`
-    + `<text x="${mx}" y="${my}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#1e293b">${t}</text>`;
+  return `<text x="${mx}" y="${my}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" fill="#1e293b">${t}</text>`;
+}
+// 圖形內文字：標籤、卡序、構造代號（如 J造）、面積、樓高（有才顯示），以形心為中心上下排列，行距 1 m
+function shapeTextSVG(sh, c) {
+  const lines = [];
+  if (sh.label) lines.push([esc(sh.label), '#1e3050']);
+  if (sh.floor) lines.push([esc(sh.floor), '#1e3050']);
+  if (sh.struct) lines.push([`${sh.struct}造`, '#1e3050']);
+  lines.push([`${c.area.toFixed(2)} m²`, '#64748b']);
+  if (sh.fh) lines.push([`(H:${fmt(sh.fh)})`, '#64748b']);
+  return lines.map(([t, col], i) => `<text x="${c.x}" y="${c.y + i - (lines.length - 1) / 2}" font-size="0.9" text-anchor="middle" dominant-baseline="central" fill="${col}">${t}</text>`).join('');
 }
 function contentSVG(showSel) {
   let out = '';
@@ -258,8 +287,7 @@ function contentSVG(showSel) {
     const on = showSel && selected && selected.kind === 'shape' && selected.id === sh.id;
     out += `<g data-sel="shape" data-id="${sh.id}">`
       + `<polygon points="${g.pts.join(' ')}" fill="${on ? 'rgba(37,99,235,.08)' : 'rgba(255,255,255,.01)'}" stroke="${on ? '#2563eb' : '#1e3050'}" stroke-width="${on ? 3 : 2}" ${NS}/>`
-      + (sh.label ? `<text x="${c.x}" y="${c.y - 0.5}" font-size="0.9" text-anchor="middle" dominant-baseline="central" fill="#1e3050">${esc(sh.label)}</text>` : '')
-      + `<text x="${c.x}" y="${c.y + (sh.label ? 0.5 : 0)}" font-size="0.9" text-anchor="middle" dominant-baseline="central" fill="#64748b">${c.area.toFixed(2)} m²</text>`
+      + shapeTextSVG(sh, c)
       + `</g><g pointer-events="none">${g.dims.map(d => dimSVG(...d)).join('')}</g>`;
   }
   for (const t of doc.texts) {
@@ -316,13 +344,25 @@ function render() {
     + `<rect x="${x0}" y="${y0}" width="${W / s}" height="${H / s}" fill="url(#g)"/>${contentSVG(true)}${editOverlaySVG()}${drawOverlaySVG()}</g>`
     + rulersSVG(W, H) + scaleBarSVG(W - 12, RULER + 12, s, true);
   $('#zoomPct').textContent = Math.round(s / BASE * 100) + '%';
-  renderAreas();
+  renderAreas(); placePopup();
+}
+// 參數窗放在圖形右側，超出畫布則改放左側
+function placePopup() {
+  const p = $('#popup'), sh = popup !== null && doc.shapes.find(o => o.id === popup);
+  const t = popup !== null && doc.texts.find(o => o.id === popup);
+  p.hidden = !sh && !t; if (p.hidden) { p.innerHTML = ''; return; }   // 清空，避免與左側屬性表單 id 重複
+  const hw = t && t.text.length * t.size * 0.3;
+  const P = sh ? geom(sh).pts : [[t.x - hw, t.y - t.size / 2], [t.x + hw, t.y + t.size / 2]], { s, tx, ty } = view, xs = P.map(q => q[0] * s + tx), top = Math.min(...P.map(q => q[1])) * s + ty;
+  let x = Math.max(...xs) + 12;
+  if (x + p.offsetWidth > stage.clientWidth - 8) x = Math.min(...xs) - p.offsetWidth - 12;
+  p.style.left = Math.max(RULER + 8, x) + 'px';
+  p.style.top = Math.max(RULER + 8, Math.min(top, stage.clientHeight - p.offsetHeight - 8)) + 'px';
 }
 // 依樓層分組；同樓層內標籤相同者合併面積
 function areaGroups() {
   const floors = new Map();
   for (const sh of doc.shapes) {
-    const f = sh.floor || '未分層', a = centroid(geom(sh).pts).area;
+    const f = sh.floor || '未填卡序', a = centroid(geom(sh).pts).area;
     if (!floors.has(f)) floors.set(f, new Map());
     const m = floors.get(f), key = sh.label || '#' + sh.id;
     const r = m.get(key) || { label: sh.label || '（未標籤）', area: 0, ids: [] };
@@ -336,20 +376,17 @@ function areaTableHTML() {
   if (!groups.length) return '';
   const total = groups.reduce((s, g) => s + g.sub, 0);
   const selId = selected && selected.kind === 'shape' ? selected.id : null;
-  let h = `<table class="area"><tr class="hd"><td>樓層</td><td>標籤</td><td class="num">面積 (m²)</td></tr>`;
-  for (const g of groups) {
-    g.rows.forEach((r, i) => {
-      h += `<tr data-id="${r.ids[0]}"${r.ids.includes(selId) ? ' class="on"' : ''}><td>${i ? '' : esc(g.floor)}</td>`
-        + `<td>${esc(r.label)}${r.ids.length > 1 ? ` <span class="cnt">（${r.ids.length} 塊合併）</span>` : ''}</td><td class="num">${r.area.toFixed(2)}</td></tr>`;
-    });
-    h += `<tr class="subt"><td></td><td>${esc(g.floor)} 小計</td><td class="num">${g.sub.toFixed(2)}</td></tr>`;
+  let h = `<table class="area"><tr class="hd"><td>卡序</td><td class="num">面積 (m²)</td></tr>`;
+  for (const g of groups) {                    // 每個卡序一列（不分標籤）
+    const ids = g.rows.flatMap(r => r.ids);
+    h += `<tr data-id="${ids[0]}"${ids.includes(selId) ? ' class="on"' : ''}><td>${esc(g.floor)}</td><td class="num">${g.sub.toFixed(2)}</td></tr>`;
   }
-  return h + `<tr class="tot"><td colspan="2">合計</td><td class="num">${total.toFixed(2)}</td></tr></table>`
+  return h + `<tr class="tot"><td>合計</td><td class="num">${total.toFixed(2)}</td></tr></table>`
     + `<p class="hint">約 ${(total * 0.3025).toFixed(2)} 坪（1 m² = 0.3025 坪）</p>`;
 }
 function renderAreas() {
   $('#areas').innerHTML = areaTableHTML() || '<p class="hint" style="margin:0">尚無圖形。</p>';
-  const floors = new Set(['1F', '2F', '3F', '4F', '5F', ...doc.shapes.map(s => s.floor).filter(Boolean)]);
+  const floors = new Set([...doc.shapes.map(s => s.floor).filter(Boolean)]);
   $('#floorList').innerHTML = [...floors].map(f => `<option value="${esc(f)}">`).join('');
 }
 $('#areas').addEventListener('click', e => {
@@ -366,8 +403,9 @@ function renderTemplates() {
     ? '<p class="hint" style="grid-column:1/-1;margin:0">按「開始繪製」後，在右側格線上逐點點擊頂點（每 0.1 m 吸附），點回起點、雙擊或按 Enter 完成。</p>'
     : SHAPES[curType].fields.map(([k, lab, def]) =>
       `<label>${lab}<input type="number" step="0.1" data-k="${k}" value="${def}"></label>`).join(''))
-    + `<label>樓層<input id="addFloor" list="floorList" value="${esc(lastFloor)}"></label>`
-    + `<label class="full">標籤文字（如 1A、[C]）<input id="addLabel"></label>`;
+    + `<label>卡序<input id="addFloor" value="${esc(lastFloor)}"></label>`
+    + `<label>樓高 (m)<input id="addFH" type="number" step="0.1"></label>`
+    + `<label class="full">房屋構造<select id="addStruct">${structOpts('')}</select></label>`;
   $('#addBtn').textContent = isPoly ? '開始繪製' : '加入畫布';
   $('#addErr').textContent = '';
 }
@@ -381,10 +419,12 @@ function viewCenter() {
   return { x: snap((stage.clientWidth / 2 - view.tx) / view.s), y: snap((stage.clientHeight / 2 - view.ty) / view.s) };
 }
 $('#addBtn').addEventListener('click', () => {
-  const floor = $('#addFloor').value.trim(), label = $('#addLabel').value.trim();
+  const floor = $('#addFloor').value.trim(), label = '';   // 標籤欄位暫時移除，可在屬性區補填
+  const fh = parseFloat($('#addFH').value) > 0 ? parseFloat($('#addFH').value) : undefined;
+  const struct = $('#addStruct').value || undefined;
   if (curType === 'poly') {
     if (floor) lastFloor = floor;
-    drawing = { pts: [], cur: null, label, floor };
+    drawing = { pts: [], cur: null, label, floor, fh, struct };
     $('#addErr').textContent = ''; select(null); updateDrawHint();
     return;
   }
@@ -392,7 +432,7 @@ $('#addBtn').addEventListener('click', () => {
   $('#addErr').textContent = err; if (err) return;
   const c = viewCenter();
   if (floor) lastFloor = floor;
-  const sh = { id: doc.nextId++, type: curType, params, label, floor, x: c.x, y: c.y, rot: 0 };
+  const sh = { id: doc.nextId++, type: curType, params, label, floor, fh, struct, x: c.x, y: c.y, rot: 0 };
   doc.shapes.push(sh); select({ kind: 'shape', id: sh.id }); save();
 });
 $('#txtBtn').addEventListener('click', () => {
@@ -407,24 +447,33 @@ $('#txtBtn').addEventListener('click', () => {
 function select(sel) {
   selected = sel;
   if (!sel || sel.kind !== 'shape' || sel.id !== editing) { editing = null; activeV = null; }
+  if (!sel || sel.id !== popup) popup = null;
   updateDrawHint(); renderProps(); render();
 }
 function renderProps() {
-  const box = $('#props'), o = findObj(selected);
+  // 參數窗開啟時，屬性表單改畫在參數窗內（id 不重複），左側只留提示
+  const pop = popup !== null && selected && selected.id === popup;
+  const box = pop ? $('#popup') : $('#props'), o = findObj(selected);
   if (!o) { selected = null; box.innerHTML = '<p class="hint" style="margin:0">點選畫布上的圖形或文字即可編輯。</p>'; return; }
+  if (pop) $('#props').innerHTML = '<p class="hint" style="margin:0">正在畫布上的參數窗編輯。</p>';
+  const closeBtn = pop ? '<button class="btn" id="popClose" style="float:right;padding:0 8px" title="關閉 (Esc)">×</button>' : '';
   if (selected.kind === 'shape') {
     const d = SHAPES[o.type];
-    box.innerHTML = `<h3>${d.name}</h3><div class="fields" id="propFields">`
+    box.innerHTML = `<h3>${d.name}${closeBtn}</h3><div class="fields" id="propFields">`
       + d.fields.map(([k, lab]) => `<label>${lab}<input type="number" step="0.1" data-k="${k}" value="${o.params[k]}"></label>`).join('')
-      + `<label>樓層<input id="propFloor" list="floorList" value="${esc(o.floor || '')}"></label>`
+      + `<label>卡序<input id="propFloor" list="floorList" value="${esc(o.floor || '')}"></label>`
+      + `<label>樓高 (m)<input id="propFH" type="number" step="0.1" value="${o.fh || ''}"></label>`
+      + `<label class="full">房屋構造<select id="propStruct">${structOpts(o.struct)}</select></label>`
       + `<label class="full">標籤文字<input id="propLabel" value="${esc(o.label)}"></label></div>`
       + `<p class="hint" id="propArea"></p><p class="err" id="propErr"></p>`
-      + `<div class="row"><button class="btn" id="rotBtn">旋轉 90°</button><button class="btn" id="dupBtn">複製</button><button class="btn danger" id="delBtn">刪除</button></div>`;
+      + `<div class="row"><button class="btn" id="vtxBtn">編輯頂點</button><button class="btn" id="rotBtn">旋轉 90°</button><button class="btn" id="dupBtn">複製</button><button class="btn danger" id="delBtn">刪除</button></div>`;
     const showArea = () => $('#propArea').textContent = `面積：${centroid(geom(o).pts).area.toFixed(2)} m²`;
     showArea();
     $('#propFields').addEventListener('input', e => {
       if (e.target.id === 'propLabel') o.label = e.target.value.trim();
       else if (e.target.id === 'propFloor') o.floor = e.target.value.trim();
+      else if (e.target.id === 'propStruct') { if (e.target.value) o.struct = e.target.value; else delete o.struct; }
+      else if (e.target.id === 'propFH') { const v = parseFloat(e.target.value); if (v > 0) o.fh = v; else delete o.fh; }
       else {
         const p = readFields($('#propFields')), err = validate(o.type, p);
         $('#propErr').textContent = err; if (err) return;
@@ -433,14 +482,16 @@ function renderProps() {
       render(); save();
     });
     $('#rotBtn').onclick = () => { o.rot = (o.rot + 1) % 4; render(); save(); };
+    $('#vtxBtn').onclick = () => { popup = null; editing = o.id; activeV = null; renderProps(); updateDrawHint(); render(); };
     $('#dupBtn').onclick = () => {
       const c = { ...structuredClone(o), id: doc.nextId++, x: o.x + 1, y: o.y + 1 };
       doc.shapes.push(c); select({ kind: 'shape', id: c.id }); save();
     };
   } else {
-    box.innerHTML = `<h3>文字標註</h3><div class="fields" id="propFields">`
+    box.innerHTML = `<h3>文字標註${closeBtn}</h3><div class="fields" id="propFields">`
       + `<label>文字<input id="propText" value="${esc(o.text)}"></label>`
-      + `<label>字高 (m)<input id="propSize" type="number" step="0.1" value="${o.size}"></label></div>`
+      + `<label>字高 (m)<input id="propSize" type="number" step="0.1" value="${o.size}"></label>`
+      + `<div class="full arrows">${arrowBtns('propText')}</div></div>`
       + `<div class="row"><button class="btn danger" id="delBtn">刪除</button></div>`;
     $('#propFields').addEventListener('input', () => {
       const text = $('#propText').value.trim(), size = parseFloat($('#propSize').value);
@@ -450,7 +501,18 @@ function renderProps() {
     });
   }
   $('#delBtn').onclick = deleteSelected;
+  if (pop) $('#popClose').onclick = () => { popup = null; renderProps(); render(); };
 }
+// 文字標註的箭頭符號：點按鈕插入到對應輸入框的游標位置
+const ARROWS = ['←', '→', '↑', '↓', '↖', '↗', '↘', '↙', '↔', '↕', '⇐', '⇒', '⇑', '⇓'];
+const arrowBtns = id => ARROWS.map(a => `<button class="btn" type="button" data-arrow="${a}" data-for="${id}">${a}</button>`).join('');
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-arrow]'); if (!b) return;
+  const inp = document.getElementById(b.dataset.for), i = inp.selectionStart ?? inp.value.length, j = inp.selectionEnd ?? i;
+  inp.value = inp.value.slice(0, i) + b.dataset.arrow + inp.value.slice(j);
+  inp.focus(); inp.setSelectionRange(i + 1, i + 1);
+  inp.dispatchEvent(new Event('input', { bubbles: true }));   // 讓屬性表單照常存檔
+});
 function deleteSelected() {
   if (!selected) return;
   const key = selected.kind === 'shape' ? 'shapes' : 'texts';
@@ -475,7 +537,7 @@ function updateDrawHint() {
   const h = $('#drawHint');
   h.hidden = !drawing && editing === null; svg.classList.toggle('drawing', !!drawing);
   if (drawing) h.textContent = `繪製不規則形：已 ${drawing.pts.length} 點｜點擊加入頂點・點回起點／雙擊／Enter 完成・Backspace 刪上一點・Esc 取消・按住 Shift 鎖定水平/垂直`;
-  else if (editing !== null) h.textContent = '頂點編輯：拖曳圓點改變形狀（範本圖形為等比例縮放）・拖曳邊中點的小方塊新增頂點・點選頂點後按 Delete 刪除・Esc／點空白處／再雙擊 結束';
+  else if (editing !== null) h.textContent = '頂點編輯：拖曳圓點改變形狀（範本圖形為等比例縮放）・拖曳邊中點的小方塊新增頂點・點選頂點後按 Delete 刪除・Esc／點空白處 結束';
 }
 function drawPoint(e) {
   const w = toWorld(e), last = drawing.pts[drawing.pts.length - 1];
@@ -493,7 +555,7 @@ function finishDrawing() {
   const Q = A < 0 ? [...P].reverse() : P;   // 統一為畫面上的順時針，尺寸線才會標在外側
   const mx = Math.min(...Q.map(q => q[0])), my = Math.min(...Q.map(q => q[1]));
   const sh = { id: doc.nextId++, type: 'poly', params: { pts: Q.map(q => [+(q[0] - mx).toFixed(2), +(q[1] - my).toFixed(2)]) },
-    label: drawing.label, floor: drawing.floor, x: mx, y: my, rot: 0 };
+    label: drawing.label, floor: drawing.floor, fh: drawing.fh, struct: drawing.struct, x: mx, y: my, rot: 0 };
   drawing = null; updateDrawHint();
   doc.shapes.push(sh); select({ kind: 'shape', id: sh.id }); save();
 }
@@ -557,11 +619,12 @@ svg.addEventListener('pointerdown', e => {
   const el = e.target.closest('[data-sel]');
   if (el && e.button === 0) {
     const sel = { kind: el.dataset.sel, id: +el.dataset.id }, o = findObj(sel), w = toWorld(e);
-    const now = Date.now(), dbl = sel.kind === 'shape' && lastTap && lastTap.id === sel.id && now - lastTap.t < 400;
+    const now = Date.now(), dbl = lastTap && lastTap.id === sel.id && now - lastTap.t < 400;
     lastTap = { id: sel.id, t: now };
-    if (dbl) {                                    // 雙擊圖形：切換頂點編輯
-      lastTap = null; editing = editing === sel.id ? null : sel.id; activeV = null;
-      updateDrawHint(); render(); e.preventDefault();
+    if (dbl) {                                    // 雙擊圖形或文字：在旁邊開參數窗
+      lastTap = null; popup = sel.id; select(sel);
+      const f = $('#popup input'); if (f) f.focus();
+      e.preventDefault();
       return;
     }
     if (!selected || selected.kind !== sel.kind || selected.id !== sel.id) select(sel);
@@ -625,7 +688,8 @@ svg.addEventListener('wheel', e => {
 }, { passive: false });
 $('#zoomIn').onclick = () => zoomAt(1.2, stage.clientWidth / 2, stage.clientHeight / 2);
 $('#zoomOut').onclick = () => zoomAt(1 / 1.2, stage.clientWidth / 2, stage.clientHeight / 2);
-$('#zoomReset').onclick = () => { view = { s: BASE, tx: RULER + 30, ty: RULER + 30 }; render(); };
+$('#undoBtn').onclick = undo;
+$('#zoomReset').onclick =() => { view = { s: DEFAULT_S, tx: RULER + 30, ty: RULER + 30 }; render(); };
 
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
@@ -648,6 +712,7 @@ document.addEventListener('keydown', e => {
     select({ kind: clip.kind, id: o.id }); save();
     return;
   }
+  if (popup !== null && e.key === 'Escape') { popup = null; renderProps(); render(); return; }
   if (editing !== null && e.key === 'Escape') { editing = null; activeV = null; updateDrawHint(); render(); return; }
   if (editing !== null && activeV !== null && (e.key === 'Delete' || e.key === 'Backspace')) {
     e.preventDefault();
@@ -728,15 +793,39 @@ $('#pngBtn').onclick = () => {
 
 // ---- 圖說資料與 A4 列印 ----
 const META = [['taxNo', '稅籍編號'], ['addr', '房屋坐落'], ['drawer', '繪製人員'], ['date', '繪製日期']];
+// 加減項目：doc.meta.adjCols = [{name, checks:[ADJ 索引]}]，欄位由使用者新增
+// ADJ 只能在尾端新增，不可調整順序或刪除，否則舊存檔會對錯項目
+const ADJ = ['高度未達二．五公尺。', '無天花板。', '地板為泥土、石灰三合土或水泥地。', '無窗戶或窗戶為水泥框窗。',
+  '無衛生設備。', '無內牆或內牆為粗糙紅磚面。', '無牆壁。'];
 function renderMeta() {
-  const m = doc.meta || {};
+  const m = doc.meta || {}, cols = m.adjCols || [];
   $('#metaFields').innerHTML = META.map(([k, lab]) =>
-    `<label${k === 'addr' ? ' class="full"' : ''}>${lab}<input data-meta="${k}" value="${esc(m[k] || '')}"></label>`).join('');
+    `<label${k === 'addr' ? ' class="full"' : ''}>${lab}<input data-meta="${k}" value="${esc(m[k] || '')}"></label>`).join('')
+    + `<div class="full"><div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0 6px">`
+    + `<span style="font-size:13px;color:var(--muted)">加減項目：</span><button class="btn" id="adjAdd">＋ 新增欄位</button></div>`
+    + `<div style="overflow-x:auto"><table class="adj"><tr><th></th>`
+    + cols.map((c, j) => `<th><input data-adjname="${j}" value="${esc(c.name)}" placeholder="1A"><button class="btn" data-adjdel="${j}" title="刪除此欄">×</button></th>`).join('')
+    + `</tr>` + ADJ.map((t, i) => `<tr><td>${t}</td>`
+      + cols.map((c, j) => `<td><input type="checkbox" data-adjc="${j}" data-adjr="${i}"${c.checks.includes(i) ? ' checked' : ''}></td>`).join('') + `</tr>`).join('')
+    + `<tr><td></td>` + cols.map(c => `<td>${c.checks.length ? 'R' + c.checks.length * 10 : ''}</td>`).join('') + `</tr></table></div></div>`;
 }
 $('#metaFields').addEventListener('input', e => {
-  doc.meta = { ...doc.meta, [e.target.dataset.meta]: e.target.value }; save();
+  const d = e.target.dataset, cols = (doc.meta || {}).adjCols || [];
+  if (d.adjname !== undefined) cols[+d.adjname].name = e.target.value.trim();
+  else if (d.adjc !== undefined) {               // 勾選後重繪，更新最下列的 R 值
+    const c = cols[+d.adjc], r = +d.adjr;
+    c.checks = e.target.checked ? [...c.checks, r].sort((a, b) => a - b) : c.checks.filter(x => x !== r);
+    renderMeta();
+  } else doc.meta = { ...doc.meta, [d.meta]: e.target.value };
+  save();
 });
-const PRINT_W = 186, PRINT_H = 175;   // A4 扣邊界後圖面可用範圍 (mm)
+$('#metaFields').addEventListener('click', e => {
+  const b = e.target.closest('#adjAdd,[data-adjdel]'); if (!b) return;
+  const cols = [...((doc.meta || {}).adjCols || [])];
+  if (b.id === 'adjAdd') cols.push({ name: '', checks: [] }); else cols.splice(+b.dataset.adjdel, 1);
+  doc.meta = { ...doc.meta, adjCols: cols }; renderMeta(); save();
+});
+const PRINT_W = 196, PRINT_H = 174;   // A4 橫向右欄圖面可用範圍 (mm)，需與 .sheet 的格線尺寸一致
 const SCALES = [50, 100, 150, 200, 250, 300, 400, 500, 600, 1000, 1500, 2000];
 const MM_PER_PX = 25.4 / 96;
 function buildPrint() {
@@ -745,20 +834,53 @@ function buildPrint() {
   const N = SCALES.find(n => (b.maxX - b.minX) * 1000 / n <= PRINT_W
     && (b.maxY - b.minY) * 1000 / n + BAR_H * MM_PER_PX <= PRINT_H) || SCALES[SCALES.length - 1];
   const s = 1000 / N / MM_PER_PX;     // 每公尺的 CSS px，使列印尺寸符合 1:N
-  const m = doc.meta || {}, v = k => esc(m[k] || '');
-  const total = areaGroups().reduce((t, g) => t + g.sub, 0);
-  $('#print').innerHTML = `<h1>房屋平面圖</h1><table class="meta">`
-    + `<tr><th>稅籍編號</th><td>${v('taxNo')}</td><th>繪製日期</th><td>${v('date')}</td></tr>`
-    + `<tr><th>房屋坐落</th><td colspan="3">${v('addr')}</td></tr>`
-    + `<tr><th>繪製人員</th><td>${v('drawer')}</td><th>比例尺</th><td>1 : ${N}　（總面積 ${total.toFixed(2)} m²）</td></tr></table>`
-    + `<div class="pdraw">${drawingSVG(b, s, 'gp')}</div><h3>面積計算</h3>${areaTableHTML()}`;
+  // 圖面範圍擴大到填滿右欄（方格紙滿版），圖形置中
+  const wm = PRINT_W * N / 1000, hm = (PRINT_H - BAR_H * MM_PER_PX) * N / 1000;
+  const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+  const bb = { minX: cx - wm / 2, maxX: cx + wm / 2, minY: cy - hm / 2, maxY: cy + hm / 2 };
+  const taxNo = esc((doc.meta || {}).taxNo || '');
+  $('#print').innerHTML = `<div class="sheet">`
+    + `<div class="sh ptax">稅籍編號：${taxNo}</div>`
+    + `<div class="sh st">房屋平面圖</div>`
+    + `<div class="sl"><div class="calc">${calcLinesHTML()}</div>`
+    + `<div class="padj-t">符合作業要點＿＿條第＿＿點加減項目</div>${adjPrintHTML()}</div>`
+    + `<div class="sd">${drawingSVG(bb, s, 'gp')}</div></div>`;
   return true;
+}
+// 列印左欄計算式：每個卡序一列，列出該卡序各圖形的算式與合計面積
+const FORMULA = {
+  rect: p => `${fmt(p.h)}×${fmt(p.w)}`,      // 長×寬
+  square: p => `${fmt(p.s)}×${fmt(p.s)}`,
+  trap: p => `(${fmt(p.a)}+${fmt(p.b)})×${fmt(p.h)}÷2`,
+  tri: p => `${fmt(p.b)}×${fmt(p.h)}÷2`,
+  para: p => `${fmt(p.b)}×${fmt(p.h)}`,
+  L: p => `${fmt(p.W)}×${fmt(p.H)}−${fmt(p.cw)}×${fmt(p.ch)}`,
+};
+function calcLinesHTML() {
+  const groups = areaGroups();
+  let h = '', total = 0;
+  for (const g of groups) {                    // 每個卡序一列：卡序：算式 + 算式 = 面積
+    const terms = g.rows.flatMap(r => r.ids).map(id => {
+      const sh = doc.shapes.find(o => o.id === id), f = FORMULA[sh.type];
+      return f ? f(sh.params) : centroid(geom(sh).pts).area.toFixed(2);
+    });
+    h += `<div>${esc(g.floor)}：${terms.join(' + ')} = ${g.sub.toFixed(2)}</div>`;
+    total += g.sub;
+  }
+  return h + `<div class="pt">總面積：${total.toFixed(2)} m²（約 ${(total * 0.3025).toFixed(2)} 坪）</div>`;
+}
+function adjPrintHTML() {
+  const cols = (doc.meta || {}).adjCols || [];
+  return `<table class="padj"><tr><th></th>${cols.map(c => `<th>${esc(c.name)}</th>`).join('')}</tr>`
+    + ADJ.map((t, i) => `<tr><td>□${t}</td>${cols.map(c => `<td>${c.checks.includes(i) ? '✓' : ''}</td>`).join('')}</tr>`).join('')
+    + `<tr><td></td>${cols.map(c => `<td>${c.checks.length ? 'R' + c.checks.length * 10 : ''}</td>`).join('')}</tr></table>`;
 }
 $('#printBtn').onclick = () => {
   if (!buildPrint()) { alert('畫布是空的'); return; }
   window.print();
 };
 
+$('#txtArrows').innerHTML = arrowBtns('txtVal');
 load();
 history = [JSON.stringify(doc)];
 $('#undoBtn').disabled = true;
